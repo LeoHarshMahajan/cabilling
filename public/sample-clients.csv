@@ -1,0 +1,5 @@
+name,pan,gstin,email,phone,clientType,state,city,pincode
+Gupta & Sons,AABCG1234A,27AABCG1234A1Z5,gupta@example.com,9876543210,COMPANY,Maharashtra,Mumbai,400001
+Anita Sharma,AAAAS9012B,,anita@example.com,9876543211,INDIVIDUAL,Karnataka,Bengaluru,560001
+Sunrise LLP,AABCS5678C,29AABCS5678C1Z3,sunrise@example.com,9876543212,LLP,Karnataka,Bengaluru,560002
+Delhi Traders,AABCD9012D,07AABCD9012D1Z4,delhi@example.com,9876543213,COMPANY,Delhi,New Delhi,110001

@@ -1,0 +1,196 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum UserRole {
+  ADMIN
+  CA
+  CLERK
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMode {
+  CASH
+  CHEQUE
+  UPI
+  BANK_TRANSFER
+  NEFT
+  RTGS
+}
+
+enum GstType {
+  CGST_SGST
+  IGST
+  EXEMPT
+}
+
+model Firm {
+  id              String   @id @default(cuid())
+  name            String
+  gstin           String?
+  pan             String?
+  state           String
+  stateCode       String
+  address         String
+  city            String
+  pincode         String
+  phone           String?
+  email           String?
+  website         String?
+  invoicePrefix   String   @default("INV")
+  invoiceCounter  Int      @default(0)
+  gstRate         Float    @default(18)
+  smtpHost        String?
+  smtpPort        Int?
+  smtpUser        String?
+  smtpPass        String?
+  smtpFrom        String?
+  dailySummaryTo  String?
+  dailySummaryOn  Boolean  @default(true)
+  summaryTime     String   @default("08:00")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users    User[]
+  clients  Client[]
+  services Service[]
+  invoices Invoice[]
+}
+
+model User {
+  id                String    @id @default(cuid())
+  name              String
+  email             String    @unique
+  password          String
+  role              UserRole  @default(CLERK)
+  firmId            String
+  isActive          Boolean   @default(true)
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  firm       Firm      @relation(fields: [firmId], references: [id])
+  invoices   Invoice[]
+}
+
+model Client {
+  id            String   @id @default(cuid())
+  firmId        String
+  name          String
+  displayName   String?
+  gstin         String?
+  pan           String?
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  state         String?
+  stateCode     String?
+  pincode       String?
+  contactPerson String?
+  clientType    String   @default("INDIVIDUAL")
+  notes         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  firm     Firm      @relation(fields: [firmId], references: [id])
+  invoices Invoice[]
+
+  @@index([firmId])
+}
+
+model Service {
+  id            String  @id @default(cuid())
+  firmId        String
+  name          String
+  description   String?
+  sacCode       String
+  defaultAmount Float?
+  isActive      Boolean @default(true)
+
+  firm         Firm          @relation(fields: [firmId], references: [id])
+  invoiceItems InvoiceItem[]
+
+  @@index([firmId])
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  firmId        String
+  clientId      String
+  assignedToId  String?
+  invoiceNumber String
+  invoiceDate   DateTime      @default(now())
+  dueDate       DateTime?
+  status        InvoiceStatus @default(DRAFT)
+  gstType       GstType       @default(CGST_SGST)
+  subtotal      Float         @default(0)
+  cgstAmount    Float         @default(0)
+  sgstAmount    Float         @default(0)
+  igstAmount    Float         @default(0)
+  totalAmount   Float         @default(0)
+  paidAmount    Float         @default(0)
+  balanceAmount Float         @default(0)
+  notes         String?
+  terms         String?
+  financialYear String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  firm       Firm          @relation(fields: [firmId], references: [id])
+  client     Client        @relation(fields: [clientId], references: [id])
+  assignedTo User?         @relation(fields: [assignedToId], references: [id])
+  items      InvoiceItem[]
+  payments   Payment[]
+
+  @@unique([firmId, invoiceNumber])
+  @@index([firmId, status])
+  @@index([clientId])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  serviceId   String?
+  description String
+  sacCode     String?
+  quantity    Float   @default(1)
+  unitPrice   Float
+  amount      Float
+  sortOrder   Int     @default(0)
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service Service? @relation(fields: [serviceId], references: [id])
+}
+
+model Payment {
+  id           String      @id @default(cuid())
+  invoiceId    String
+  amount       Float
+  paymentDate  DateTime    @default(now())
+  mode         PaymentMode @default(CASH)
+  reference    String?
+  chequeNumber String?
+  bankName     String?
+  notes        String?
+  createdAt    DateTime    @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+}
