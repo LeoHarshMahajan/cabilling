@@ -7,8 +7,11 @@ type Client = { id: string; name: string; stateCode?: string | null; state?: str
 type Service = { id: string; name: string; sacCode: string; defaultAmount?: number | null };
 type Firm = { id: string; stateCode: string; gstRate: number };
 type LineItem = { serviceId: string; description: string; sacCode: string; quantity: number; unitPrice: number; amount: number };
+type CompletedTask = { id: string; title: string; amount?: number | null; period?: string | null; service?: { sacCode: string; name: string } | null; client: { id: string; name: string } };
 
-export function NewInvoiceForm({ clients, services, firm, defaultClientId }: { clients: Client[]; services: Service[]; firm: Firm; defaultClientId?: string }) {
+export function NewInvoiceForm({ clients, services, firm, defaultClientId, completedTasks = [] }: {
+  clients: Client[]; services: Service[]; firm: Firm; defaultClientId?: string; completedTasks?: CompletedTask[];
+}) {
   const router = useRouter();
   const [clientId, setClientId] = useState(defaultClientId ?? "");
   const [items, setItems] = useState<LineItem[]>([{ serviceId: "", description: "", sacCode: "", quantity: 1, unitPrice: 0, amount: 0 }]);
@@ -18,6 +21,8 @@ export function NewInvoiceForm({ clients, services, firm, defaultClientId }: { c
   const [terms, setTerms] = useState("Payment due within 30 days.");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [showTaskImport, setShowTaskImport] = useState(false);
 
   const selectedClient = clients.find(c => c.id === clientId);
   const isSameState = selectedClient?.stateCode === firm.stateCode;
@@ -57,6 +62,27 @@ export function NewInvoiceForm({ clients, services, firm, defaultClientId }: { c
     setItems(prev => prev.filter((_, i) => i !== idx));
   }
 
+  // Tasks available for the currently selected client
+  const clientTasks = completedTasks.filter(t => t.client.id === clientId);
+
+  function importTasks() {
+    const tasksToImport = completedTasks.filter(t => selectedTaskIds.includes(t.id));
+    const newItems = tasksToImport.map(t => ({
+      serviceId: "",
+      description: t.period ? `${t.title} — ${t.period}` : t.title,
+      sacCode: t.service?.sacCode ?? "",
+      quantity: 1,
+      unitPrice: t.amount ?? 0,
+      amount: t.amount ?? 0,
+    }));
+    setItems(prev => {
+      // Replace blank starter item if it's empty
+      const hasBlank = prev.length === 1 && !prev[0].description && prev[0].amount === 0;
+      return hasBlank ? newItems : [...prev, ...newItems];
+    });
+    setShowTaskImport(false);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!clientId) return alert("Please select a client");
@@ -67,7 +93,7 @@ export function NewInvoiceForm({ clients, services, firm, defaultClientId }: { c
       const res = await fetch("/api/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, items, invoiceDate, dueDate: dueDate || null, notes, terms, gstType }),
+        body: JSON.stringify({ clientId, items, invoiceDate, dueDate: dueDate || null, notes, terms, gstType, taskIds: selectedTaskIds }),
       });
       const inv = await res.json();
       if (!res.ok) {
@@ -107,10 +133,62 @@ export function NewInvoiceForm({ clients, services, firm, defaultClientId }: { c
           </div>
         </div>
         {selectedClient && (
-          <p className="mt-3 text-sm text-gray-500">
-            GST: <span className="font-medium text-gray-700">{gstType === "CGST_SGST" ? "CGST + SGST (same state)" : "IGST (inter-state)"}</span>
-            {" @ "}{gstRate}%
-          </p>
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              GST: <span className="font-medium text-gray-700">{gstType === "CGST_SGST" ? "CGST + SGST (same state)" : "IGST (inter-state)"}</span>
+              {" @ "}{gstRate}%
+            </p>
+            {clientTasks.length > 0 && (
+              <button type="button" onClick={() => setShowTaskImport(true)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                Import from Tasks ({clientTasks.length} completed)
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Task import modal */}
+        {showTaskImport && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Import Completed Tasks</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">Select tasks to add as invoice line items</p>
+                </div>
+                <button onClick={() => setShowTaskImport(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              </div>
+              <div className="p-6 space-y-2 max-h-80 overflow-y-auto">
+                {clientTasks.map(t => (
+                  <label key={t.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedTaskIds.includes(t.id) ? "bg-emerald-50 border-emerald-300" : "border-gray-200 hover:bg-gray-50"}`}>
+                    <input type="checkbox" checked={selectedTaskIds.includes(t.id)}
+                      onChange={e => setSelectedTaskIds(prev => e.target.checked ? [...prev, t.id] : prev.filter(id => id !== t.id))}
+                      className="w-4 h-4 text-emerald-600 rounded" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900">{t.title}{t.period ? ` — ${t.period}` : ""}</p>
+                      {t.service && <p className="text-xs text-gray-400">SAC: {t.service.sacCode}</p>}
+                    </div>
+                    <p className="text-sm font-bold text-gray-900 shrink-0">
+                      {t.amount ? formatCurrency(t.amount) : "—"}
+                    </p>
+                  </label>
+                ))}
+              </div>
+              <div className="p-6 border-t border-gray-100 flex gap-3">
+                <button type="button" onClick={() => setShowTaskImport(false)}
+                  className="flex-1 border border-gray-300 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50">
+                  Cancel
+                </button>
+                <button type="button" onClick={importTasks} disabled={selectedTaskIds.length === 0}
+                  className="flex-1 bg-emerald-600 text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-40">
+                  Import {selectedTaskIds.length > 0 ? `${selectedTaskIds.length} task${selectedTaskIds.length > 1 ? "s" : ""}` : ""}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 

@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     const igstAmount = !isSameState && body.gstType !== "EXEMPT" ? gstAmount : 0;
     const totalAmount = round2(subtotal + gstAmount);
 
-    return tx.invoice.create({
+    const created = await tx.invoice.create({
       data: {
         firmId,
         clientId: body.clientId,
@@ -84,6 +84,17 @@ export async function POST(req: NextRequest) {
       },
       include: { client: true, items: true },
     });
+
+    // Mark selected tasks as INVOICED
+    const taskIds: string[] = body.taskIds ?? [];
+    if (taskIds.length > 0) {
+      await tx.task.updateMany({
+        where: { id: { in: taskIds }, firmId },
+        data: { status: "INVOICED", invoiceId: created.id },
+      });
+    }
+
+    return created;
   });
 
   return NextResponse.json(invoice);
