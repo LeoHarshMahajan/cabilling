@@ -1,11 +1,9 @@
 // @ts-ignore
 import { PrismaClient } from "../app/generated/prisma/client";
 // @ts-ignore
-import { PrismaBetterSQLite3 } from "@prisma/adapter-better-sqlite3";
-// @ts-ignore
-import Database from "better-sqlite3";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import bcrypt from "bcryptjs";
-import path from "path";
+import { parseDbUrl } from "../lib/db";
 
 const CA_SERVICES = [
   { name: "Income Tax Return Filing (ITR-1)", sacCode: "998231", defaultAmount: 2000 },
@@ -31,8 +29,9 @@ const CA_SERVICES = [
 ];
 
 async function main() {
-  const sqlite = new Database(path.join(__dirname, "dev.db"));
-  const adapter = new PrismaBetterSQLite3(sqlite);
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL environment variable is not set");
+  const adapter = new PrismaMariaDb(parseDbUrl(url) as any);
   const db = new PrismaClient({ adapter });
 
   const firm = await db.firm.upsert({
@@ -40,69 +39,46 @@ async function main() {
     update: {},
     create: {
       id: "firm-1",
-      name: "Sharma & Associates",
-      gstin: "27AABCS1234A1Z5",
-      pan: "AABCS1234A",
+      name: "Mittal Gupta & Associates",
+      gstin: "27AABCM1234A1Z5",
+      pan: "AABCM1234A",
       state: "Maharashtra",
       stateCode: "27",
       address: "123, CA Street, Andheri West",
       city: "Mumbai",
       pincode: "400053",
       phone: "9876543210",
-      email: "info@sharmaassociates.com",
-      invoicePrefix: "SA",
+      email: "info@mgadvisors.in",
+      invoicePrefix: "MGA",
       invoiceCounter: 0,
       gstRate: 18,
     },
   });
 
-  const adminPwd = await bcrypt.hash("admin123", 10);
-  const caPwd = await bcrypt.hash("ca123", 10);
+  const adminPwd = await bcrypt.hash("ub4arNsFg5J9XB", 12);
 
   await db.user.upsert({
-    where: { email: "admin@ca.com" },
+    where: { email: "nehagupta@mgadvisors.in" },
     update: {},
     create: {
-      name: "Rajesh Sharma",
-      email: "admin@ca.com",
+      name: "Neha Gupta",
+      email: "nehagupta@mgadvisors.in",
       password: adminPwd,
       role: "ADMIN",
       firmId: firm.id,
     },
   });
 
-  await db.user.upsert({
-    where: { email: "ca@ca.com" },
-    update: {},
-    create: {
-      name: "Priya Patel",
-      email: "ca@ca.com",
-      password: caPwd,
-      role: "CA",
-      firmId: firm.id,
-    },
-  });
-
   for (const svc of CA_SERVICES) {
-    await db.service.create({
-      data: { firmId: firm.id, ...svc },
+    await db.service.upsert({
+      where: { id: `svc-${svc.sacCode}-${svc.name.slice(0, 10)}` },
+      update: {},
+      create: { id: `svc-${svc.sacCode}-${svc.name.slice(0, 10)}`, firmId: firm.id, ...svc },
     });
   }
 
-  const clients = [
-    { name: "Mehta Traders Pvt Ltd", gstin: "27AAACM1234A1Z1", pan: "AAACM1234A", clientType: "COMPANY", state: "Maharashtra", stateCode: "27", city: "Mumbai" },
-    { name: "Suresh Kumar", pan: "AAAPS5678B", clientType: "INDIVIDUAL", state: "Maharashtra", stateCode: "27", city: "Pune" },
-    { name: "Gujarat Exports LLP", gstin: "24AABCG5678B1Z2", pan: "AABCG5678B", clientType: "LLP", state: "Gujarat", stateCode: "24", city: "Ahmedabad" },
-    { name: "Delhi Tech Solutions", gstin: "07AABCD9012C1Z3", pan: "AABCD9012C", clientType: "COMPANY", state: "Delhi", stateCode: "07", city: "New Delhi" },
-  ];
-
-  for (const c of clients) {
-    await db.client.create({ data: { ...c, firmId: firm.id } });
-  }
-
   console.log("✅ Seed complete");
-  console.log("   Admin: admin@ca.com / admin123");
-  console.log("   CA:    ca@ca.com / ca123");
+  console.log("   Admin: nehagupta@mgadvisors.in / ub4arNsFg5J9XB");
 
   await db.$disconnect();
 }
